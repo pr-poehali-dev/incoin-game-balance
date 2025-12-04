@@ -18,6 +18,10 @@ interface User {
   telegramId?: number;
   firstName?: string;
   photoUrl?: string;
+  referralCode?: string;
+  referredBy?: string;
+  referrals?: string[];
+  promoCodesUsed?: string[];
   upgrades?: {
     autoClicker: number;
     doubleReward: number;
@@ -56,6 +60,21 @@ interface TradeHistory {
   total: number;
 }
 
+interface PromoCode {
+  code: string;
+  type: 'youtube' | 'referral' | 'bonus';
+  bonus: number;
+  maxUses?: number;
+  usedBy: string[];
+}
+
+interface SlotHistory {
+  type: 'win' | 'loss';
+  bet: number;
+  result: number;
+  timestamp: number;
+}
+
 const GAMES = [
   { id: 'clicker', name: 'Кликер Монет', icon: 'Coins', color: 'from-purple-500 to-pink-500' },
   { id: 'guess', name: 'Угадай Число', icon: 'Dices', color: 'from-blue-500 to-cyan-500' },
@@ -66,7 +85,17 @@ const GAMES = [
   { id: 'puzzle', name: 'Пазл Слайдер', icon: 'Grid3x3', color: 'from-violet-500 to-purple-500' },
   { id: 'reaction', name: 'Реакция Pro', icon: 'Timer', color: 'from-red-500 to-pink-500' },
   { id: 'math', name: 'Быстрая Математика', icon: 'Calculator', color: 'from-cyan-500 to-blue-500' },
+  { id: 'slots', name: 'Слоты 777', icon: 'Cherry', color: 'from-red-600 to-yellow-500' },
 ];
+
+const PROMO_CODES: PromoCode[] = [
+  { code: 'YOUTUBE2024', type: 'youtube', bonus: 1000, usedBy: [] },
+  { code: 'CRYPTO100', type: 'youtube', bonus: 500, usedBy: [] },
+  { code: 'INCOIN777', type: 'youtube', bonus: 777, usedBy: [] },
+];
+
+const USD_RATE = 0.01;
+const RUB_RATE = 1;
 
 const UPGRADES: Upgrade[] = [
   { id: 'autoClicker', name: 'Авто-кликер', description: 'Автоматически зарабатывает 1 INCOIN каждые 10 сек', icon: 'Cpu', basePrice: 100, effect: '+1 INCOIN/10сек', color: 'from-blue-500 to-cyan-500' },
@@ -91,6 +120,15 @@ export default function Index() {
   const [tradeAmount, setTradeAmount] = useState('');
   const [tradeHistory, setTradeHistory] = useState<TradeHistory[]>([]);
   const [aiTrading, setAiTrading] = useState(false);
+  const [showReferral, setShowReferral] = useState(false);
+  const [showPromo, setShowPromo] = useState(false);
+  const [promoInput, setPromoInput] = useState('');
+  const [referralInput, setReferralInput] = useState('');
+  const [slotHistory, setSlotHistory] = useState<SlotHistory[]>([]);
+  const [slotBet, setSlotBet] = useState('10');
+  const [slotSpinning, setSlotSpinning] = useState(false);
+  const [slotResult, setSlotResult] = useState<string[]>(['🍒', '🍒', '🍒']);
+  const [currency, setCurrency] = useState<'incoin' | 'usd' | 'rub'>('incoin');
   const { toast } = useToast();
 
   useEffect(() => {
