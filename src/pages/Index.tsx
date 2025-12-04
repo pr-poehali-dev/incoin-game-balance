@@ -26,6 +26,8 @@ interface User {
   referralEarnings?: number;
   promoCodesUsed?: string[];
   createdPromoCodes?: PromoCode[];
+  vipStatus?: 'none' | 'week' | 'month' | 'twoMonths' | 'threeMonths' | 'year' | 'twoYears';
+  vipExpiry?: number;
   upgrades?: {
     autoClicker: number;
     doubleReward: number;
@@ -79,6 +81,20 @@ interface SlotHistory {
   timestamp: number;
 }
 
+interface VIPPlan {
+  id: string;
+  name: string;
+  duration: string;
+  durationDays: number;
+  priceINCOIN: number;
+  priceUSD: number;
+  priceRUB: number;
+  benefits: string[];
+  icon: string;
+  color: string;
+  popular?: boolean;
+}
+
 const GAMES = [
   { id: 'clicker', name: 'Кликер Монет', icon: 'Coins', color: 'from-purple-500 to-pink-500' },
   { id: 'guess', name: 'Угадай Число', icon: 'Dices', color: 'from-blue-500 to-cyan-500' },
@@ -107,6 +123,84 @@ const UPGRADES: Upgrade[] = [
   { id: 'luckyCharm', name: 'Талисман удачи', description: '20% шанс получить бонус +1 INCOIN', icon: 'Clover', basePrice: 250, effect: '+20% бонус', color: 'from-green-500 to-emerald-500' },
   { id: 'speedBoost', name: 'Ускоритель', description: 'Уменьшает время игр на 30%', icon: 'Rocket', basePrice: 350, effect: '-30% время', color: 'from-purple-500 to-pink-500' },
 ];
+
+const VIP_PLANS: VIPPlan[] = [
+  {
+    id: 'week',
+    name: '1 Неделя VIP',
+    duration: '7 дней',
+    durationDays: 7,
+    priceINCOIN: 500,
+    priceUSD: 5,
+    priceRUB: 500,
+    benefits: ['⚡ x2 к заработку в играх', '💎 Эксклюзивный значок VIP', '🎁 Ежедневный бонус +50 INCOIN', '🔥 Приоритет в топе'],
+    icon: 'Zap',
+    color: 'from-blue-500 to-cyan-500',
+  },
+  {
+    id: 'month',
+    name: '1 Месяц VIP',
+    duration: '30 дней',
+    durationDays: 30,
+    priceINCOIN: 1800,
+    priceUSD: 18,
+    priceRUB: 1800,
+    benefits: ['⚡ x2.5 к заработку в играх', '💎 Эксклюзивный значок VIP', '🎁 Ежедневный бонус +150 INCOIN', '🔥 Приоритет в топе', '🎰 Бонус к слотам +10%'],
+    icon: 'Star',
+    color: 'from-purple-500 to-pink-500',
+    popular: true,
+  },
+  {
+    id: 'twoMonths',
+    name: '2 Месяца VIP',
+    duration: '60 дней',
+    durationDays: 60,
+    priceINCOIN: 3200,
+    priceUSD: 32,
+    priceRUB: 3200,
+    benefits: ['⚡ x3 к заработку в играх', '💎 Эксклюзивный значок VIP', '🎁 Ежедневный бонус +300 INCOIN', '🔥 Приоритет в топе', '🎰 Бонус к слотам +15%', '🏆 Уникальная рамка профиля'],
+    icon: 'Crown',
+    color: 'from-yellow-500 to-orange-500',
+  },
+  {
+    id: 'threeMonths',
+    name: '3 Месяца VIP',
+    duration: '90 дней',
+    durationDays: 90,
+    priceINCOIN: 4500,
+    priceUSD: 45,
+    priceRUB: 4500,
+    benefits: ['⚡ x3.5 к заработку в играх', '💎 Эксклюзивный значок VIP', '🎁 Ежедневный бонус +500 INCOIN', '🔥 Приоритет в топе', '🎰 Бонус к слотам +20%', '🏆 Уникальная рамка профиля', '🎨 Кастомные цвета профиля'],
+    icon: 'Gem',
+    color: 'from-pink-500 to-red-500',
+  },
+  {
+    id: 'year',
+    name: '1 Год VIP',
+    duration: '365 дней',
+    durationDays: 365,
+    priceINCOIN: 15000,
+    priceUSD: 150,
+    priceRUB: 15000,
+    benefits: ['⚡ x5 к заработку в играх', '💎 Легендарный значок VIP', '🎁 Ежедневный бонус +1000 INCOIN', '🔥 ТОП-1 приоритет', '🎰 Бонус к слотам +30%', '🏆 Легендарная рамка', '🎨 Все кастомизации', '👑 Эксклюзивный титул'],
+    icon: 'Trophy',
+    color: 'from-orange-500 to-red-600',
+  },
+  {
+    id: 'twoYears',
+    name: '2 Года VIP',
+    duration: '730 дней',
+    durationDays: 730,
+    priceINCOIN: 25000,
+    priceUSD: 250,
+    priceRUB: 25000,
+    benefits: ['⚡ x10 к заработку в играх', '💎 БОЖЕСТВЕННЫЙ значок', '🎁 Ежедневный бонус +2500 INCOIN', '🔥 АБСОЛЮТНЫЙ приоритет', '🎰 Бонус к слотам +50%', '🏆 Космическая рамка', '🎨 ВСЕ возможности', '👑 Титул ЛЕГЕНДА', '🌟 Персональная анимация'],
+    icon: 'Sparkles',
+    color: 'from-purple-600 to-pink-600',
+  },
+];
+
+const YOOMONEY_WALLET = '4100119386951023';
 
 export default function Index() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -138,6 +232,9 @@ export default function Index() {
   const [newPromoBonus, setNewPromoBonus] = useState('');
   const [gameCurrency, setGameCurrency] = useState<'incoin' | 'usd' | 'rub'>('incoin');
   const [allPromoCodes, setAllPromoCodes] = useState<PromoCode[]>(PROMO_CODES);
+  const [showVIP, setShowVIP] = useState(false);
+  const [selectedVIPPlan, setSelectedVIPPlan] = useState<VIPPlan | null>(null);
+  const [vipPaymentMethod, setVipPaymentMethod] = useState<'incoin' | 'usd' | 'rub'>('incoin');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -156,6 +253,16 @@ export default function Index() {
       if (!user.referralEarnings) user.referralEarnings = 0;
       if (!user.promoCodesUsed) user.promoCodesUsed = [];
       if (!user.createdPromoCodes) user.createdPromoCodes = [];
+      if (!user.vipStatus) user.vipStatus = 'none';
+      if (!user.vipExpiry) user.vipExpiry = 0;
+      
+      // Проверка истечения VIP
+      if (user.vipStatus !== 'none' && user.vipExpiry && user.vipExpiry < Date.now()) {
+        user.vipStatus = 'none';
+        user.vipExpiry = 0;
+        toast({ title: '⏰ VIP истёк', description: 'Ваша VIP подписка закончилась', variant: 'destructive' });
+      }
+      
       setCurrentUser(user);
       setShowAuth(false);
       loadGameHistory();
@@ -724,6 +831,93 @@ export default function Index() {
     return 'INCOIN';
   };
 
+  const isVIP = () => {
+    if (!currentUser) return false;
+    return currentUser.vipStatus !== 'none' && currentUser.vipExpiry && currentUser.vipExpiry > Date.now();
+  };
+
+  const getVIPMultiplier = () => {
+    if (!isVIP() || !currentUser) return 1;
+    const plan = VIP_PLANS.find(p => p.id === currentUser.vipStatus);
+    if (!plan) return 1;
+    
+    const multipliers: Record<string, number> = {
+      'week': 2,
+      'month': 2.5,
+      'twoMonths': 3,
+      'threeMonths': 3.5,
+      'year': 5,
+      'twoYears': 10,
+    };
+    
+    return multipliers[plan.id] || 1;
+  };
+
+  const buyVIP = (plan: VIPPlan, paymentMethod: 'incoin' | 'usd' | 'rub') => {
+    if (!currentUser) return;
+
+    let price = 0;
+    let balanceField: 'balance' | 'balanceUSD' | 'balanceRUB' = 'balance';
+    
+    if (paymentMethod === 'incoin') {
+      price = plan.priceINCOIN;
+      balanceField = 'balance';
+    } else if (paymentMethod === 'usd') {
+      price = plan.priceUSD;
+      balanceField = 'balanceUSD';
+    } else {
+      price = plan.priceRUB;
+      balanceField = 'balanceRUB';
+    }
+
+    if (currentUser[balanceField] < price) {
+      toast({ 
+        title: '💳 Недостаточно средств', 
+        description: `Не хватает ${(price - currentUser[balanceField]).toFixed(2)} ${paymentMethod.toUpperCase()}`,
+        variant: 'destructive' 
+      });
+      return;
+    }
+
+    const expiryDate = Date.now() + (plan.durationDays * 24 * 60 * 60 * 1000);
+    
+    const updatedUser = {
+      ...currentUser,
+      [balanceField]: currentUser[balanceField] - price,
+      vipStatus: plan.id as User['vipStatus'],
+      vipExpiry: expiryDate,
+    };
+
+    const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+    const userIndex = allUsers.findIndex((u: User) => u.id === currentUser.id);
+    if (userIndex !== -1) {
+      allUsers[userIndex] = updatedUser;
+      localStorage.setItem('all_users', JSON.stringify(allUsers));
+    }
+
+    localStorage.setItem('incoin_user', JSON.stringify(updatedUser));
+    setCurrentUser(updatedUser);
+    setShowVIP(false);
+    setSelectedVIPPlan(null);
+
+    toast({ 
+      title: '👑 VIP активирован!', 
+      description: `${plan.name} активен до ${new Date(expiryDate).toLocaleDateString('ru-RU')}` 
+    });
+  };
+
+  const openYooMoneyPayment = (plan: VIPPlan) => {
+    const amount = plan.priceRUB;
+    const label = `VIP ${plan.name} - ${currentUser?.username}`;
+    const url = `https://yoomoney.ru/to/${YOOMONEY_WALLET}?sum=${amount}&label=${encodeURIComponent(label)}&comment=${encodeURIComponent('Оплата VIP подписки INCOIN')}`;
+    window.open(url, '_blank');
+    
+    toast({ 
+      title: '💳 Переход к оплате', 
+      description: 'После оплаты свяжитесь с поддержкой для активации VIP',
+    });
+  };
+
   const logout = () => {
     localStorage.removeItem('incoin_user');
     setCurrentUser(null);
@@ -792,12 +986,17 @@ export default function Index() {
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shine">
-                <Icon name="Coins" size={24} className="text-white" />
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center shine ${isVIP() ? 'bg-gradient-to-br from-yellow-500 to-orange-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'}`}>
+                {isVIP() ? <Icon name="Crown" size={24} className="text-white coin-bounce" /> : <Icon name="Coins" size={24} className="text-white" />}
               </div>
-              <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                INCOIN
-              </span>
+              <div>
+                <span className={`text-2xl font-bold ${isVIP() ? 'bg-gradient-to-r from-yellow-400 to-orange-400' : 'bg-gradient-to-r from-purple-400 to-pink-400'} bg-clip-text text-transparent`}>
+                  INCOIN
+                </span>
+                {isVIP() && (
+                  <div className="text-xs text-yellow-400 font-bold">👑 VIP x{getVIPMultiplier()}</div>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-4">
@@ -847,7 +1046,7 @@ export default function Index() {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs value={currentTab} onValueChange={setCurrentTab}>
-          <TabsList className="grid w-full grid-cols-7 mb-8 bg-card/50">
+          <TabsList className="grid w-full grid-cols-8 mb-8 bg-card/50">
             <TabsTrigger value="home">
               <Icon name="Home" size={18} className="mr-1" />
               Главная
@@ -855,6 +1054,10 @@ export default function Index() {
             <TabsTrigger value="games">
               <Icon name="Gamepad2" size={18} className="mr-1" />
               Игры
+            </TabsTrigger>
+            <TabsTrigger value="vip" className={isVIP() ? 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20' : ''}>
+              <Icon name="Crown" size={18} className="mr-1" />
+              {isVIP() ? '👑 VIP' : 'VIP'}
             </TabsTrigger>
             <TabsTrigger value="shop">
               <Icon name="ShoppingBag" size={18} className="mr-1" />
@@ -879,11 +1082,24 @@ export default function Index() {
           </TabsList>
 
           <TabsContent value="home" className="space-y-6">
-            <Card className="p-6 bg-gradient-to-br from-purple-600 to-pink-600 border-0">
+            <Card className={`p-6 border-0 ${isVIP() ? 'bg-gradient-to-br from-yellow-600 to-orange-600 pulse-glow' : 'bg-gradient-to-br from-purple-600 to-pink-600'}`}>
               <div className="flex items-center justify-between text-white">
                 <div>
-                  <h2 className="text-3xl font-bold mb-2">Привет, {currentUser?.username}! 👋</h2>
-                  <p className="text-white/80">Играй, зарабатывай и становись лидером!</p>
+                  <h2 className="text-3xl font-bold mb-2 flex items-center gap-2">
+                    {isVIP() && <span className="shine">👑</span>}
+                    Привет, {currentUser?.username}! 👋
+                  </h2>
+                  <p className="text-white/80">{isVIP() ? `VIP активен! Множитель x${getVIPMultiplier()}` : 'Играй, зарабатывай и становись лидером!'}</p>
+                  {!isVIP() && (
+                    <Button 
+                      onClick={() => setCurrentTab('vip')}
+                      className="mt-3 bg-white/20 hover:bg-white/30 text-white"
+                      size="sm"
+                    >
+                      <Icon name="Crown" size={16} className="mr-2" />
+                      Стать VIP
+                    </Button>
+                  )}
                 </div>
                 <div className="text-right space-y-2">
                   <div>
@@ -942,7 +1158,23 @@ export default function Index() {
               </Card>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-4">
+            <div className="grid md:grid-cols-3 gap-4">
+              {!isVIP() && (
+                <Card className="p-6 bg-gradient-to-br from-yellow-600/20 to-orange-600/20 border border-yellow-500/50 backdrop-blur hover:scale-105 transition-all pulse-glow">
+                  <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
+                    👑 <Icon name="Crown" size={24} />
+                    Стань VIP!
+                  </h3>
+                  <p className="text-sm text-muted-foreground mb-4">Получи x10 к заработку и эксклюзивные бонусы!</p>
+                  <Button 
+                    onClick={() => setCurrentTab('vip')}
+                    className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 text-black font-bold shine"
+                  >
+                    Купить VIP
+                  </Button>
+                </Card>
+              )}
+              
               <Card className="p-6 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-500/50 backdrop-blur hover:scale-105 transition-all">
                 <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
                   🎁 <Icon name="Gift" size={24} />
@@ -1128,6 +1360,110 @@ export default function Index() {
                 </Card>
               ))}
             </div>
+          </TabsContent>
+
+          <TabsContent value="vip" className="space-y-6">
+            {isVIP() ? (
+              <Card className="p-6 bg-gradient-to-br from-yellow-600 to-orange-600 border-0 text-white shine">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-3xl font-bold mb-2 flex items-center gap-2">
+                      👑 VIP Активен!
+                    </h2>
+                    <p className="text-white/80 text-lg">Ты король этой платформы!</p>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold">x{getVIPMultiplier()}</div>
+                    <div className="text-white/80 text-sm">Множитель</div>
+                    <div className="text-sm mt-2">
+                      До: {currentUser?.vipExpiry ? new Date(currentUser.vipExpiry).toLocaleDateString('ru-RU') : '—'}
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ) : (
+              <Card className="p-6 bg-gradient-to-br from-purple-600 to-pink-600 border-0 text-white">
+                <h2 className="text-3xl font-bold mb-2">👑 VIP Подписка</h2>
+                <p className="text-white/80 text-lg">Стань VIP и получи невероятные бонусы!</p>
+              </Card>
+            )}
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {VIP_PLANS.map((plan) => (
+                <Card 
+                  key={plan.id}
+                  className={`p-6 bg-card/80 backdrop-blur hover:scale-105 transition-all ${plan.popular ? 'border-2 border-yellow-500 shadow-lg shadow-yellow-500/50' : ''}`}
+                >
+                  {plan.popular && (
+                    <Badge className="mb-3 bg-gradient-to-r from-yellow-500 to-orange-500 text-black font-bold">
+                      🔥 ПОПУЛЯРНО
+                    </Badge>
+                  )}
+                  
+                  <div className={`w-16 h-16 rounded-full bg-gradient-to-r ${plan.color} flex items-center justify-center mb-4 shine`}>
+                    <Icon name={plan.icon as any} size={32} className="text-white" />
+                  </div>
+                  
+                  <h3 className="text-2xl font-bold mb-2">{plan.name}</h3>
+                  <p className="text-muted-foreground mb-4">{plan.duration}</p>
+                  
+                  <div className="space-y-2 mb-4">
+                    {plan.benefits.map((benefit, i) => (
+                      <div key={i} className="flex items-start gap-2 text-sm">
+                        <span className="text-green-500 mt-0.5">✓</span>
+                        <span>{benefit}</span>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="border-t border-border pt-4 space-y-3">
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="p-2 bg-purple-500/20 rounded">
+                        <div className="font-bold">{plan.priceINCOIN}</div>
+                        <div className="text-muted-foreground">INCOIN</div>
+                      </div>
+                      <div className="p-2 bg-green-500/20 rounded">
+                        <div className="font-bold">${plan.priceUSD}</div>
+                        <div className="text-muted-foreground">USD</div>
+                      </div>
+                      <div className="p-2 bg-blue-500/20 rounded">
+                        <div className="font-bold">{plan.priceRUB}₽</div>
+                        <div className="text-muted-foreground">RUB</div>
+                      </div>
+                    </div>
+                    
+                    <Button 
+                      onClick={() => {
+                        setSelectedVIPPlan(plan);
+                        setShowVIP(true);
+                      }}
+                      className={`w-full bg-gradient-to-r ${plan.color} hover:opacity-90 shine`}
+                    >
+                      <Icon name="ShoppingCart" size={16} className="mr-2" />
+                      Купить VIP
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            <Card className="p-6 bg-gradient-to-br from-blue-600/20 to-cyan-600/20 border border-blue-500/50">
+              <h3 className="text-xl font-bold mb-3 flex items-center gap-2">
+                <Icon name="HelpCircle" size={24} />
+                Как оплатить VIP?
+              </h3>
+              <div className="space-y-2 text-sm">
+                <p>1. 💰 <strong>Крипта (INCOIN)</strong> - мгновенная активация с баланса</p>
+                <p>2. 💵 <strong>Доллары/Рубли</strong> - оплата с баланса в USD/RUB</p>
+                <p>3. 💳 <strong>ЮMoney</strong> - перевод на карту с ручной активацией</p>
+                <p className="mt-4 p-3 bg-yellow-500/20 rounded-lg">
+                  <strong>Реквизиты ЮMoney:</strong> <code className="font-mono">{YOOMONEY_WALLET}</code>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  После оплаты через ЮMoney свяжитесь с поддержкой для активации VIP
+                </p>
+              </div>
+            </Card>
           </TabsContent>
 
           <TabsContent value="shop">
@@ -1322,14 +1658,22 @@ export default function Index() {
           </TabsContent>
 
           <TabsContent value="account" className="space-y-6">
-            <Card className="p-6 bg-card/80 backdrop-blur">
+            <Card className={`p-6 backdrop-blur ${isVIP() ? 'bg-gradient-to-br from-yellow-600/20 to-orange-600/20 border-2 border-yellow-500' : 'bg-card/80'}`}>
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-3xl font-bold text-white">
-                  {currentUser?.username.charAt(0).toUpperCase()}
+                <div className={`w-20 h-20 rounded-full flex items-center justify-center text-3xl font-bold text-white shine ${isVIP() ? 'bg-gradient-to-br from-yellow-500 to-orange-500' : 'bg-gradient-to-br from-purple-500 to-pink-500'}`}>
+                  {isVIP() ? '👑' : currentUser?.username.charAt(0).toUpperCase()}
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold">{currentUser?.username}</h2>
+                  <h2 className="text-2xl font-bold flex items-center gap-2">
+                    {currentUser?.username}
+                    {isVIP() && <Badge className="bg-gradient-to-r from-yellow-500 to-orange-500 text-black">👑 VIP x{getVIPMultiplier()}</Badge>}
+                  </h2>
                   <p className="text-muted-foreground">ID: {currentUser?.id}</p>
+                  {isVIP() && (
+                    <p className="text-xs text-yellow-600 font-semibold mt-1">
+                      VIP до: {currentUser?.vipExpiry ? new Date(currentUser.vipExpiry).toLocaleDateString('ru-RU') : '—'}
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1639,6 +1983,106 @@ export default function Index() {
               Создать промокод
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showVIP} onOpenChange={setShowVIP}>
+        <DialogContent className="bg-card/95 backdrop-blur max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-2">
+              <Icon name="Crown" size={28} />
+              Покупка VIP: {selectedVIPPlan?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Выберите способ оплаты
+            </DialogDescription>
+          </DialogHeader>
+
+          {selectedVIPPlan && (
+            <div className="space-y-4 py-4">
+              <div className="p-4 bg-muted/50 rounded-lg">
+                <h4 className="font-bold mb-2">Преимущества:</h4>
+                <div className="space-y-1 text-sm">
+                  {selectedVIPPlan.benefits.map((benefit, i) => (
+                    <div key={i}>• {benefit}</div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="font-bold">Выберите способ оплаты:</h4>
+                
+                <div className="grid grid-cols-3 gap-3">
+                  <Button
+                    variant={vipPaymentMethod === 'incoin' ? 'default' : 'outline'}
+                    onClick={() => setVipPaymentMethod('incoin')}
+                    className={`h-auto p-4 flex-col ${vipPaymentMethod === 'incoin' ? 'bg-purple-600' : ''}`}
+                  >
+                    <div className="text-2xl mb-1">{selectedVIPPlan.priceINCOIN}</div>
+                    <div className="text-xs">INCOIN</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Баланс: {currentUser?.balance.toFixed(0)}
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    variant={vipPaymentMethod === 'usd' ? 'default' : 'outline'}
+                    onClick={() => setVipPaymentMethod('usd')}
+                    className={`h-auto p-4 flex-col ${vipPaymentMethod === 'usd' ? 'bg-green-600' : ''}`}
+                  >
+                    <div className="text-2xl mb-1">${selectedVIPPlan.priceUSD}</div>
+                    <div className="text-xs">USD</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Баланс: ${currentUser?.balanceUSD.toFixed(2)}
+                    </div>
+                  </Button>
+                  
+                  <Button
+                    variant={vipPaymentMethod === 'rub' ? 'default' : 'outline'}
+                    onClick={() => setVipPaymentMethod('rub')}
+                    className={`h-auto p-4 flex-col ${vipPaymentMethod === 'rub' ? 'bg-blue-600' : ''}`}
+                  >
+                    <div className="text-2xl mb-1">{selectedVIPPlan.priceRUB}₽</div>
+                    <div className="text-xs">RUB</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Баланс: {currentUser?.balanceRUB.toFixed(2)}₽
+                    </div>
+                  </Button>
+                </div>
+
+                <Button 
+                  onClick={() => buyVIP(selectedVIPPlan, vipPaymentMethod)}
+                  className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-black font-bold shine"
+                >
+                  <Icon name="Crown" size={20} className="mr-2" />
+                  Купить VIP с баланса
+                </Button>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-muted" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">Или</span>
+                  </div>
+                </div>
+
+                <Button 
+                  onClick={() => openYooMoneyPayment(selectedVIPPlan)}
+                  variant="outline"
+                  className="w-full border-yellow-500/50 hover:bg-yellow-500/10"
+                >
+                  <Icon name="CreditCard" size={20} className="mr-2" />
+                  Оплатить через ЮMoney ({selectedVIPPlan.priceRUB}₽)
+                </Button>
+
+                <div className="p-3 bg-blue-500/20 rounded-lg text-sm">
+                  <p className="font-semibold mb-1">💳 Оплата через ЮMoney:</p>
+                  <p className="text-xs">После оплаты свяжитесь с поддержкой, указав ваш username и сумму платежа для активации VIP</p>
+                </div>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
