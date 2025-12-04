@@ -15,6 +15,9 @@ interface User {
   balance: number;
   gamesPlayed: number;
   totalEarned: number;
+  telegramId?: number;
+  firstName?: string;
+  photoUrl?: string;
 }
 
 interface GameHistory {
@@ -47,6 +50,8 @@ export default function Index() {
   const [gameHistory, setGameHistory] = useState<GameHistory[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
+  const [showTopUp, setShowTopUp] = useState(false);
+  const [topUpAmount, setTopUpAmount] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -56,8 +61,49 @@ export default function Index() {
       setShowAuth(false);
       loadGameHistory();
       loadLeaderboard();
+    } else {
+      initTelegramAuth();
     }
   }, []);
+
+  const initTelegramAuth = () => {
+    if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
+      const tg = (window as any).Telegram.WebApp;
+      tg.ready();
+      
+      if (tg.initDataUnsafe?.user) {
+        const tgUser = tg.initDataUnsafe.user;
+        handleTelegramAuth(tgUser);
+      }
+    }
+  };
+
+  const handleTelegramAuth = (tgUser: any) => {
+    const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+    let user = allUsers.find((u: User) => u.telegramId === tgUser.id);
+
+    if (!user) {
+      user = {
+        id: Date.now().toString(),
+        username: tgUser.username || tgUser.first_name,
+        balance: 0,
+        gamesPlayed: 0,
+        totalEarned: 0,
+        telegramId: tgUser.id,
+        firstName: tgUser.first_name,
+        photoUrl: tgUser.photo_url,
+      };
+      allUsers.push(user);
+      localStorage.setItem('all_users', JSON.stringify(allUsers));
+      toast({ title: 'Добро пожаловать!', description: `Аккаунт ${user.username} создан через Telegram` });
+    }
+
+    localStorage.setItem('incoin_user', JSON.stringify(user));
+    setCurrentUser(user);
+    setShowAuth(false);
+    loadGameHistory();
+    loadLeaderboard();
+  };
 
   const loadGameHistory = () => {
     const history = localStorage.getItem('game_history');
@@ -151,6 +197,48 @@ export default function Index() {
     loadLeaderboard();
   };
 
+  const handleTopUp = () => {
+    const amount = parseFloat(topUpAmount);
+    
+    if (isNaN(amount)) {
+      toast({ title: 'Ошибка', description: 'Введите корректную сумму', variant: 'destructive' });
+      return;
+    }
+
+    if (amount < 10) {
+      toast({ title: 'Ошибка', description: 'Минимальная сумма пополнения: 10 INCOIN', variant: 'destructive' });
+      return;
+    }
+
+    if (amount > 50000000) {
+      toast({ title: 'Ошибка', description: 'Максимальная сумма пополнения: 50,000,000 INCOIN', variant: 'destructive' });
+      return;
+    }
+
+    if (!currentUser) return;
+
+    const newBalance = currentUser.balance + amount;
+    const updatedUser = { ...currentUser, balance: newBalance };
+
+    const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+    const userIndex = allUsers.findIndex((u: User) => u.id === currentUser.id);
+    if (userIndex !== -1) {
+      allUsers[userIndex] = updatedUser;
+      localStorage.setItem('all_users', JSON.stringify(allUsers));
+    }
+
+    localStorage.setItem('incoin_user', JSON.stringify(updatedUser));
+    setCurrentUser(updatedUser);
+    setShowTopUp(false);
+    setTopUpAmount('');
+    loadLeaderboard();
+
+    toast({ 
+      title: 'Пополнение успешно!', 
+      description: `Баланс пополнен на ${amount.toLocaleString('ru-RU')} INCOIN` 
+    });
+  };
+
   const logout = () => {
     localStorage.removeItem('incoin_user');
     setCurrentUser(null);
@@ -173,14 +261,30 @@ export default function Index() {
             <p className="text-muted-foreground mt-2">Игровая платформа</p>
           </div>
 
-          <Tabs value={authMode} onValueChange={(v) => setAuthMode(v as 'login' | 'register')} className="mb-6">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="login">Вход</TabsTrigger>
-              <TabsTrigger value="register">Регистрация</TabsTrigger>
-            </TabsList>
-          </Tabs>
-
           <div className="space-y-4">
+            <div className="text-center mb-6">
+              <Icon name="Send" size={48} className="mx-auto mb-3 text-primary" />
+              <p className="text-muted-foreground">
+                Откройте приложение через Telegram Mini App для автоматической авторизации
+              </p>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-muted" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">Или войдите вручную</span>
+              </div>
+            </div>
+
+            <Tabs value={authMode} onValueChange={(v) => setAuthMode(v as 'login' | 'register')} className="mb-4">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="login">Вход</TabsTrigger>
+                <TabsTrigger value="register">Регистрация</TabsTrigger>
+              </TabsList>
+            </Tabs>
+
             <Input
               placeholder="Имя пользователя"
               value={username}
@@ -369,6 +473,14 @@ export default function Index() {
                   <div className="text-2xl font-bold">{currentUser?.gamesPlayed}</div>
                 </div>
               </div>
+
+              <Button 
+                onClick={() => setShowTopUp(true)} 
+                className="w-full bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600"
+              >
+                <Icon name="Plus" size={20} className="mr-2" />
+                Пополнить баланс
+              </Button>
             </Card>
 
             <Card className="p-6 bg-card/80 backdrop-blur">
@@ -459,6 +571,108 @@ export default function Index() {
           });
         }}
       />
+
+      <Dialog open={showTopUp} onOpenChange={setShowTopUp}>
+        <DialogContent className="bg-card/95 backdrop-blur">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-2">
+              <Icon name="Wallet" size={28} />
+              Пополнение баланса
+            </DialogTitle>
+            <DialogDescription>
+              Введите сумму для пополнения (от 10 до 50,000,000 INCOIN)
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Сумма пополнения</label>
+              <Input
+                type="number"
+                placeholder="Введите сумму"
+                value={topUpAmount}
+                onChange={(e) => setTopUpAmount(e.target.value)}
+                className="text-lg"
+                min={10}
+                max={50000000}
+                onKeyDown={(e) => e.key === 'Enter' && handleTopUp()}
+              />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Минимум: 10 INCOIN</span>
+                <span>Максимум: 50,000,000 INCOIN</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => setTopUpAmount('100')}
+                className="border-primary/50 hover:bg-primary/10"
+              >
+                +100
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setTopUpAmount('1000')}
+                className="border-primary/50 hover:bg-primary/10"
+              >
+                +1,000
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setTopUpAmount('10000')}
+                className="border-primary/50 hover:bg-primary/10"
+              >
+                +10,000
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setTopUpAmount('100000')}
+                className="border-primary/50 hover:bg-primary/10"
+              >
+                +100K
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setTopUpAmount('1000000')}
+                className="border-primary/50 hover:bg-primary/10"
+              >
+                +1M
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setTopUpAmount('50000000')}
+                className="border-primary/50 hover:bg-primary/10"
+              >
+                +50M
+              </Button>
+            </div>
+
+            <div className="p-4 rounded-lg bg-muted/50">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Текущий баланс:</span>
+                <span className="font-bold">{currentUser?.balance.toFixed(2)} INCOIN</span>
+              </div>
+              {topUpAmount && !isNaN(parseFloat(topUpAmount)) && (
+                <div className="flex items-center justify-between mt-2 pt-2 border-t border-border">
+                  <span className="text-sm text-muted-foreground">Новый баланс:</span>
+                  <span className="font-bold text-primary">
+                    {(currentUser!.balance + parseFloat(topUpAmount)).toLocaleString('ru-RU')} INCOIN
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <Button 
+              onClick={handleTopUp} 
+              className="w-full bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600"
+            >
+              <Icon name="CheckCircle" size={20} className="mr-2" />
+              Пополнить
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
