@@ -1300,13 +1300,15 @@ function GameDialog({ gameId, onClose, onComplete }: { gameId: string | null; on
                 <div className="text-2xl font-bold">Собрано: {gameState.score} / 10</div>
               </div>
               <div className="relative w-full h-96 bg-muted/50 rounded-lg overflow-hidden">
-                <button
-                  onClick={moveCoin}
-                  className="absolute w-16 h-16 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full flex items-center justify-center text-3xl transition-all hover:scale-110 cursor-pointer"
-                  style={{ left: `${gameState.coinPosition.x}%`, top: `${gameState.coinPosition.y}%` }}
-                >
-                  🪙
-                </button>
+                {gameState.coinPosition && (
+                  <button
+                    onClick={moveCoin}
+                    className="absolute w-16 h-16 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-full flex items-center justify-center text-3xl transition-all hover:scale-110 cursor-pointer"
+                    style={{ left: `${gameState.coinPosition.x}%`, top: `${gameState.coinPosition.y}%` }}
+                  >
+                    🪙
+                  </button>
+                )}
               </div>
             </div>
           )}
