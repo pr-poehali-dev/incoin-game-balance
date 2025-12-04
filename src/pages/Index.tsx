@@ -18,6 +18,12 @@ interface User {
   telegramId?: number;
   firstName?: string;
   photoUrl?: string;
+  upgrades?: {
+    autoClicker: number;
+    doubleReward: number;
+    luckyCharm: number;
+    speedBoost: number;
+  };
 }
 
 interface GameHistory {
@@ -32,6 +38,24 @@ interface LeaderboardEntry {
   gamesPlayed: number;
 }
 
+interface Upgrade {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  basePrice: number;
+  effect: string;
+  color: string;
+}
+
+interface TradeHistory {
+  type: 'buy' | 'sell';
+  amount: number;
+  price: number;
+  timestamp: number;
+  total: number;
+}
+
 const GAMES = [
   { id: 'clicker', name: 'Кликер Монет', icon: 'Coins', color: 'from-purple-500 to-pink-500' },
   { id: 'guess', name: 'Угадай Число', icon: 'Dices', color: 'from-blue-500 to-cyan-500' },
@@ -39,6 +63,16 @@ const GAMES = [
   { id: 'speed', name: 'Быстрые Клики', icon: 'Zap', color: 'from-yellow-500 to-orange-500' },
   { id: 'color', name: 'Цветная Реакция', icon: 'Palette', color: 'from-green-500 to-teal-500' },
   { id: 'catch', name: 'Собери Монеты', icon: 'Target', color: 'from-indigo-500 to-purple-500' },
+  { id: 'puzzle', name: 'Пазл Слайдер', icon: 'Grid3x3', color: 'from-violet-500 to-purple-500' },
+  { id: 'reaction', name: 'Реакция Pro', icon: 'Timer', color: 'from-red-500 to-pink-500' },
+  { id: 'math', name: 'Быстрая Математика', icon: 'Calculator', color: 'from-cyan-500 to-blue-500' },
+];
+
+const UPGRADES: Upgrade[] = [
+  { id: 'autoClicker', name: 'Авто-кликер', description: 'Автоматически зарабатывает 1 INCOIN каждые 10 сек', icon: 'Cpu', basePrice: 100, effect: '+1 INCOIN/10сек', color: 'from-blue-500 to-cyan-500' },
+  { id: 'doubleReward', name: 'Двойная награда', description: 'Получайте x2 монет за каждую игру', icon: 'Sparkles', basePrice: 500, effect: 'x2 награда', color: 'from-yellow-500 to-orange-500' },
+  { id: 'luckyCharm', name: 'Талисман удачи', description: '20% шанс получить бонус +1 INCOIN', icon: 'Clover', basePrice: 250, effect: '+20% бонус', color: 'from-green-500 to-emerald-500' },
+  { id: 'speedBoost', name: 'Ускоритель', description: 'Уменьшает время игр на 30%', icon: 'Rocket', basePrice: 350, effect: '-30% время', color: 'from-purple-500 to-pink-500' },
 ];
 
 export default function Index() {
@@ -52,18 +86,39 @@ export default function Index() {
   const [selectedGame, setSelectedGame] = useState<string | null>(null);
   const [showTopUp, setShowTopUp] = useState(false);
   const [topUpAmount, setTopUpAmount] = useState('');
+  const [incoinPrice, setIncoinPrice] = useState(100);
+  const [priceHistory, setPriceHistory] = useState<number[]>([100]);
+  const [tradeAmount, setTradeAmount] = useState('');
+  const [tradeHistory, setTradeHistory] = useState<TradeHistory[]>([]);
+  const [aiTrading, setAiTrading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
     const storedUser = localStorage.getItem('incoin_user');
     if (storedUser) {
-      setCurrentUser(JSON.parse(storedUser));
+      const user = JSON.parse(storedUser);
+      if (!user.upgrades) {
+        user.upgrades = { autoClicker: 0, doubleReward: 0, luckyCharm: 0, speedBoost: 0 };
+      }
+      setCurrentUser(user);
       setShowAuth(false);
       loadGameHistory();
       loadLeaderboard();
+      loadTradeHistory();
     } else {
       initTelegramAuth();
     }
+
+    const priceInterval = setInterval(() => {
+      setIncoinPrice(prev => {
+        const change = (Math.random() - 0.5) * 10;
+        const newPrice = Math.max(50, Math.min(200, prev + change));
+        setPriceHistory(ph => [...ph.slice(-20), newPrice]);
+        return newPrice;
+      });
+    }, 5000);
+
+    return () => clearInterval(priceInterval);
   }, []);
 
   const initTelegramAuth = () => {
@@ -92,6 +147,7 @@ export default function Index() {
         telegramId: tgUser.id,
         firstName: tgUser.first_name,
         photoUrl: tgUser.photo_url,
+        upgrades: { autoClicker: 0, doubleReward: 0, luckyCharm: 0, speedBoost: 0 },
       };
       allUsers.push(user);
       localStorage.setItem('all_users', JSON.stringify(allUsers));
@@ -124,6 +180,13 @@ export default function Index() {
     }
   };
 
+  const loadTradeHistory = () => {
+    const history = localStorage.getItem('trade_history');
+    if (history) {
+      setTradeHistory(JSON.parse(history));
+    }
+  };
+
   const handleAuth = () => {
     if (!username.trim()) {
       toast({ title: 'Ошибка', description: 'Введите имя пользователя', variant: 'destructive' });
@@ -145,6 +208,7 @@ export default function Index() {
         balance: 0,
         gamesPlayed: 0,
         totalEarned: 0,
+        upgrades: { autoClicker: 0, doubleReward: 0, luckyCharm: 0, speedBoost: 0 },
       };
 
       allUsers.push(newUser);
@@ -236,6 +300,94 @@ export default function Index() {
     toast({ 
       title: 'Пополнение успешно!', 
       description: `Баланс пополнен на ${amount.toLocaleString('ru-RU')} INCOIN` 
+    });
+  };
+
+  const buyUpgrade = (upgradeId: string) => {
+    if (!currentUser) return;
+
+    const upgrade = UPGRADES.find(u => u.id === upgradeId);
+    if (!upgrade) return;
+
+    const currentLevel = currentUser.upgrades?.[upgradeId as keyof typeof currentUser.upgrades] || 0;
+    const price = upgrade.basePrice * Math.pow(1.5, currentLevel);
+
+    if (currentUser.balance < price) {
+      toast({ title: 'Недостаточно средств', description: `Требуется ${price.toFixed(0)} INCOIN`, variant: 'destructive' });
+      return;
+    }
+
+    const updatedUser = {
+      ...currentUser,
+      balance: currentUser.balance - price,
+      upgrades: {
+        ...currentUser.upgrades!,
+        [upgradeId]: currentLevel + 1,
+      },
+    };
+
+    const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+    const userIndex = allUsers.findIndex((u: User) => u.id === currentUser.id);
+    if (userIndex !== -1) {
+      allUsers[userIndex] = updatedUser;
+      localStorage.setItem('all_users', JSON.stringify(allUsers));
+    }
+
+    localStorage.setItem('incoin_user', JSON.stringify(updatedUser));
+    setCurrentUser(updatedUser);
+    loadLeaderboard();
+
+    toast({ title: 'Улучшение куплено!', description: `${upgrade.name} уровень ${currentLevel + 1}` });
+  };
+
+  const handleTrade = (type: 'buy' | 'sell') => {
+    const amount = parseFloat(tradeAmount);
+    if (isNaN(amount) || amount <= 0) {
+      toast({ title: 'Ошибка', description: 'Введите корректную сумму', variant: 'destructive' });
+      return;
+    }
+
+    if (!currentUser) return;
+
+    const total = amount * incoinPrice;
+
+    if (type === 'buy' && currentUser.balance < total) {
+      toast({ title: 'Недостаточно средств', description: `Требуется ${total.toFixed(2)} INCOIN`, variant: 'destructive' });
+      return;
+    }
+
+    const newBalance = type === 'buy' ? currentUser.balance - total : currentUser.balance + total;
+    const updatedUser = { ...currentUser, balance: newBalance };
+
+    const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+    const userIndex = allUsers.findIndex((u: User) => u.id === currentUser.id);
+    if (userIndex !== -1) {
+      allUsers[userIndex] = updatedUser;
+      localStorage.setItem('all_users', JSON.stringify(allUsers));
+    }
+
+    localStorage.setItem('incoin_user', JSON.stringify(updatedUser));
+    setCurrentUser(updatedUser);
+
+    const trade: TradeHistory = { type, amount, price: incoinPrice, timestamp: Date.now(), total };
+    const history = [...tradeHistory, trade];
+    setTradeHistory(history);
+    localStorage.setItem('trade_history', JSON.stringify(history));
+
+    setTradeAmount('');
+    loadLeaderboard();
+
+    toast({ 
+      title: type === 'buy' ? 'Покупка выполнена' : 'Продажа выполнена', 
+      description: `${amount} токенов по ${incoinPrice.toFixed(2)} INCOIN` 
+    });
+  };
+
+  const toggleAiTrading = () => {
+    setAiTrading(!aiTrading);
+    toast({ 
+      title: aiTrading ? 'ИИ трейдинг остановлен' : 'ИИ трейдинг запущен', 
+      description: aiTrading ? 'Автоматическая торговля остановлена' : 'ИИ будет торговать автоматически' 
     });
   };
 
@@ -333,21 +485,29 @@ export default function Index() {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs value={currentTab} onValueChange={setCurrentTab}>
-          <TabsList className="grid w-full grid-cols-4 mb-8 bg-card/50">
+          <TabsList className="grid w-full grid-cols-6 mb-8 bg-card/50">
             <TabsTrigger value="home">
-              <Icon name="Home" size={18} className="mr-2" />
+              <Icon name="Home" size={18} className="mr-1" />
               Главная
             </TabsTrigger>
             <TabsTrigger value="games">
-              <Icon name="Gamepad2" size={18} className="mr-2" />
+              <Icon name="Gamepad2" size={18} className="mr-1" />
               Игры
             </TabsTrigger>
+            <TabsTrigger value="shop">
+              <Icon name="ShoppingBag" size={18} className="mr-1" />
+              Магазин
+            </TabsTrigger>
+            <TabsTrigger value="trading">
+              <Icon name="TrendingUp" size={18} className="mr-1" />
+              Трейдинг
+            </TabsTrigger>
             <TabsTrigger value="account">
-              <Icon name="User" size={18} className="mr-2" />
+              <Icon name="User" size={18} className="mr-1" />
               Аккаунт
             </TabsTrigger>
             <TabsTrigger value="rating">
-              <Icon name="Trophy" size={18} className="mr-2" />
+              <Icon name="Trophy" size={18} className="mr-1" />
               Рейтинг
             </TabsTrigger>
           </TabsList>
@@ -449,6 +609,197 @@ export default function Index() {
                 </Card>
               ))}
             </div>
+          </TabsContent>
+
+          <TabsContent value="shop">
+            <div className="grid md:grid-cols-2 gap-6">
+              {UPGRADES.map((upgrade) => {
+                const currentLevel = currentUser?.upgrades?.[upgrade.id as keyof typeof currentUser.upgrades] || 0;
+                const price = upgrade.basePrice * Math.pow(1.5, currentLevel);
+
+                return (
+                  <Card key={upgrade.id} className="p-6 bg-card/80 backdrop-blur">
+                    <div className="flex items-start gap-4 mb-4">
+                      <div className={`w-16 h-16 rounded-full bg-gradient-to-r ${upgrade.color} flex items-center justify-center shine flex-shrink-0`}>
+                        <Icon name={upgrade.icon as any} size={32} className="text-white" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-xl font-bold">{upgrade.name}</h3>
+                          <Badge variant="secondary">Ур. {currentLevel}</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-2">{upgrade.description}</p>
+                        <div className="flex items-center gap-2 text-sm">
+                          <Icon name="Zap" size={16} className="text-yellow-500" />
+                          <span className="font-semibold">{upgrade.effect}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-4 border-t border-border">
+                      <div>
+                        <div className="text-sm text-muted-foreground">Стоимость</div>
+                        <div className="text-2xl font-bold flex items-center gap-1">
+                          <Icon name="Coins" size={20} />
+                          {price.toFixed(0)}
+                        </div>
+                      </div>
+                      <Button 
+                        onClick={() => buyUpgrade(upgrade.id)}
+                        className={`bg-gradient-to-r ${upgrade.color}`}
+                        disabled={currentUser!.balance < price}
+                      >
+                        <Icon name="ShoppingCart" size={16} className="mr-2" />
+                        Купить
+                      </Button>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="trading" className="space-y-6">
+            <Card className="p-6 bg-card/80 backdrop-blur">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold flex items-center gap-2">
+                    <Icon name="BarChart3" size={28} />
+                    INCOIN Трейдинг
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">Торгуйте токенами в реальном времени</p>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-muted-foreground">Текущая цена</div>
+                  <div className="text-3xl font-bold text-primary">{incoinPrice.toFixed(2)} ₽</div>
+                </div>
+              </div>
+
+              <div className="mb-6 p-4 rounded-lg bg-muted/50">
+                <div className="h-32 flex items-end gap-1">
+                  {priceHistory.slice(-20).map((price, i) => {
+                    const maxPrice = Math.max(...priceHistory.slice(-20));
+                    const minPrice = Math.min(...priceHistory.slice(-20));
+                    const height = ((price - minPrice) / (maxPrice - minPrice)) * 100;
+                    return (
+                      <div 
+                        key={i} 
+                        className="flex-1 bg-gradient-to-t from-purple-500 to-pink-500 rounded-t transition-all"
+                        style={{ height: `${height || 5}%` }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-4 mb-6">
+                <div className="space-y-4">
+                  <h4 className="font-bold text-lg">Купить токены</h4>
+                  <Input
+                    type="number"
+                    placeholder="Количество токенов"
+                    value={tradeAmount}
+                    onChange={(e) => setTradeAmount(e.target.value)}
+                    className="text-lg"
+                  />
+                  <div className="text-sm text-muted-foreground">
+                    Стоимость: {tradeAmount && !isNaN(parseFloat(tradeAmount)) ? (parseFloat(tradeAmount) * incoinPrice).toFixed(2) : '0.00'} INCOIN
+                  </div>
+                  <Button 
+                    onClick={() => handleTrade('buy')}
+                    className="w-full bg-gradient-to-r from-green-500 to-emerald-500"
+                  >
+                    <Icon name="ArrowUp" size={20} className="mr-2" />
+                    Купить
+                  </Button>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="font-bold text-lg">Продать токены</h4>
+                  <Input
+                    type="number"
+                    placeholder="Количество токенов"
+                    value={tradeAmount}
+                    onChange={(e) => setTradeAmount(e.target.value)}
+                    className="text-lg"
+                  />
+                  <div className="text-sm text-muted-foreground">
+                    Получите: {tradeAmount && !isNaN(parseFloat(tradeAmount)) ? (parseFloat(tradeAmount) * incoinPrice).toFixed(2) : '0.00'} INCOIN
+                  </div>
+                  <Button 
+                    onClick={() => handleTrade('sell')}
+                    className="w-full bg-gradient-to-r from-red-500 to-pink-500"
+                  >
+                    <Icon name="ArrowDown" size={20} className="mr-2" />
+                    Продать
+                  </Button>
+                </div>
+              </div>
+
+              <Card className="p-4 bg-gradient-to-r from-purple-600/20 to-pink-600/20 border-primary/30">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
+                      <Icon name="Bot" size={24} className="text-white" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold">ИИ Трейдинг</h4>
+                      <p className="text-sm text-muted-foreground">Автоматическая торговля</p>
+                    </div>
+                  </div>
+                  <Button 
+                    onClick={toggleAiTrading}
+                    variant={aiTrading ? 'default' : 'outline'}
+                    className={aiTrading ? 'bg-gradient-to-r from-purple-500 to-pink-500' : ''}
+                  >
+                    <Icon name={aiTrading ? 'Pause' : 'Play'} size={16} className="mr-2" />
+                    {aiTrading ? 'Остановить' : 'Запустить'}
+                  </Button>
+                </div>
+                {aiTrading && (
+                  <div className="mt-3 text-sm text-muted-foreground flex items-center gap-2">
+                    <Icon name="Activity" size={16} className="animate-pulse text-green-500" />
+                    ИИ активно анализирует рынок...
+                  </div>
+                )}
+              </Card>
+            </Card>
+
+            <Card className="p-6 bg-card/80 backdrop-blur">
+              <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                <Icon name="History" size={24} />
+                История сделок
+              </h3>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {tradeHistory.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">История пуста</p>
+                ) : (
+                  tradeHistory.slice().reverse().map((trade, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                          trade.type === 'buy' ? 'bg-green-500/20 text-green-500' : 'bg-red-500/20 text-red-500'
+                        }`}>
+                          <Icon name={trade.type === 'buy' ? 'ArrowUp' : 'ArrowDown'} size={20} />
+                        </div>
+                        <div>
+                          <div className="font-semibold">
+                            {trade.type === 'buy' ? 'Покупка' : 'Продажа'} {trade.amount} токенов
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(trade.timestamp).toLocaleString('ru-RU')}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold">{trade.total.toFixed(2)} INCOIN</div>
+                        <div className="text-xs text-muted-foreground">@ {trade.price.toFixed(2)} ₽</div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
           </TabsContent>
 
           <TabsContent value="account" className="space-y-6">
@@ -710,6 +1061,29 @@ function GameDialog({ gameId, onClose, onComplete }: { gameId: string | null; on
       case 'catch':
         setGameState({ score: 0, timeLeft: 15, coinPosition: { x: 50, y: 50 } });
         break;
+      case 'puzzle':
+        const tiles = Array.from({ length: 9 }, (_, i) => i);
+        setGameState({ tiles: tiles.sort(() => Math.random() - 0.5), moves: 0 });
+        break;
+      case 'reaction':
+        setGameState({ waiting: true, startTime: 0, reactionTime: 0, attempt: 1 });
+        setTimeout(() => setGameState((prev: any) => ({ ...prev, waiting: false, startTime: Date.now() })), Math.random() * 3000 + 2000);
+        break;
+      case 'math':
+        const generateMath = () => {
+          const a = Math.floor(Math.random() * 20) + 1;
+          const b = Math.floor(Math.random() * 20) + 1;
+          const ops = ['+', '-', '*'];
+          const op = ops[Math.floor(Math.random() * ops.length)];
+          let answer = 0;
+          if (op === '+') answer = a + b;
+          else if (op === '-') answer = a - b;
+          else answer = a * b;
+          return { question: `${a} ${op} ${b}`, answer };
+        };
+        const mathQ = generateMath();
+        setGameState({ ...mathQ, userAnswer: '', score: 0, round: 1 });
+        break;
     }
   };
 
@@ -934,6 +1308,161 @@ function GameDialog({ gameId, onClose, onComplete }: { gameId: string | null; on
                   🪙
                 </button>
               </div>
+            </div>
+          )}
+
+          {gameId === 'puzzle' && (
+            <div className="space-y-4">
+              <div className="text-center mb-2">
+                <div className="text-lg font-semibold">Соберите пазл по порядку (0-8)</div>
+                <div className="text-sm text-muted-foreground">Ходов: {gameState.moves}</div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {gameState.tiles?.map((tile: number, index: number) => (
+                  <Button
+                    key={index}
+                    onClick={() => {
+                      const newTiles = [...gameState.tiles];
+                      const emptyIndex = newTiles.indexOf(8);
+                      const canSwap = 
+                        (Math.abs(index - emptyIndex) === 1 && Math.floor(index / 3) === Math.floor(emptyIndex / 3)) ||
+                        Math.abs(index - emptyIndex) === 3;
+                      
+                      if (canSwap) {
+                        [newTiles[index], newTiles[emptyIndex]] = [newTiles[emptyIndex], newTiles[index]];
+                        setGameState({ ...gameState, tiles: newTiles, moves: gameState.moves + 1 });
+                        
+                        if (newTiles.every((t, i) => t === i)) {
+                          onComplete(game?.name || '');
+                          onClose();
+                        }
+                      }
+                    }}
+                    className={`h-24 text-3xl font-bold ${
+                      tile === 8 ? 'bg-muted opacity-50' : 'bg-gradient-to-r from-violet-500 to-purple-500'
+                    }`}
+                  >
+                    {tile === 8 ? '' : tile}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {gameId === 'reaction' && (
+            <div className="space-y-4">
+              <div className="text-center mb-4">
+                <div className="text-lg font-semibold mb-2">Тест реакции - Попытка {gameState.attempt}/3</div>
+                <div className="text-sm text-muted-foreground">
+                  {gameState.waiting ? 'Ждите зелёного сигнала...' : 'Кликните как можно быстрее!'}
+                </div>
+              </div>
+              <Button
+                onClick={() => {
+                  if (!gameState.waiting && gameState.startTime > 0) {
+                    const reactionTime = Date.now() - gameState.startTime;
+                    
+                    if (gameState.attempt >= 3) {
+                      onComplete(game?.name || '');
+                      onClose();
+                    } else {
+                      setGameState({ waiting: true, startTime: 0, reactionTime, attempt: gameState.attempt + 1 });
+                      setTimeout(() => setGameState((prev: any) => ({ ...prev, waiting: false, startTime: Date.now() })), Math.random() * 3000 + 2000);
+                    }
+                  }
+                }}
+                className={`w-full h-48 text-3xl font-bold transition-all ${
+                  gameState.waiting 
+                    ? 'bg-red-500 cursor-not-allowed' 
+                    : 'bg-green-500 hover:scale-105 animate-pulse'
+                }`}
+                disabled={gameState.waiting}
+              >
+                {gameState.waiting ? '🔴 ЖДИТЕ' : '🟢 КЛИК!'}
+              </Button>
+              {gameState.reactionTime > 0 && (
+                <div className="text-center text-xl font-bold text-primary">
+                  {gameState.reactionTime}мс
+                </div>
+              )}
+            </div>
+          )}
+
+          {gameId === 'math' && (
+            <div className="space-y-4">
+              <div className="text-center mb-4">
+                <div className="text-lg font-semibold">Раунд {gameState.round} / 5</div>
+                <div className="text-4xl font-bold my-4">{gameState.question} = ?</div>
+                <div className="text-sm text-muted-foreground">Счёт: {gameState.score}</div>
+              </div>
+              <Input
+                type="number"
+                value={gameState.userAnswer}
+                onChange={(e) => setGameState({ ...gameState, userAnswer: e.target.value })}
+                placeholder="Ваш ответ"
+                className="text-center text-2xl"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (parseInt(gameState.userAnswer) === gameState.answer) {
+                      const newScore = gameState.score + 1;
+                      const newRound = gameState.round + 1;
+                      
+                      if (newRound > 5) {
+                        onComplete(game?.name || '');
+                        onClose();
+                      } else {
+                        const generateMath = () => {
+                          const a = Math.floor(Math.random() * 20) + 1;
+                          const b = Math.floor(Math.random() * 20) + 1;
+                          const ops = ['+', '-', '*'];
+                          const op = ops[Math.floor(Math.random() * ops.length)];
+                          let answer = 0;
+                          if (op === '+') answer = a + b;
+                          else if (op === '-') answer = a - b;
+                          else answer = a * b;
+                          return { question: `${a} ${op} ${b}`, answer };
+                        };
+                        const mathQ = generateMath();
+                        setGameState({ ...mathQ, userAnswer: '', score: newScore, round: newRound });
+                      }
+                    } else {
+                      toast({ title: 'Неправильно!', description: 'Попробуйте ещё раз', variant: 'destructive' });
+                    }
+                  }
+                }}
+              />
+              <Button 
+                onClick={() => {
+                  if (parseInt(gameState.userAnswer) === gameState.answer) {
+                    const newScore = gameState.score + 1;
+                    const newRound = gameState.round + 1;
+                    
+                    if (newRound > 5) {
+                      onComplete(game?.name || '');
+                      onClose();
+                    } else {
+                      const generateMath = () => {
+                        const a = Math.floor(Math.random() * 20) + 1;
+                        const b = Math.floor(Math.random() * 20) + 1;
+                        const ops = ['+', '-', '*'];
+                        const op = ops[Math.floor(Math.random() * ops.length)];
+                        let answer = 0;
+                        if (op === '+') answer = a + b;
+                        else if (op === '-') answer = a - b;
+                        else answer = a * b;
+                        return { question: `${a} ${op} ${b}`, answer };
+                      };
+                      const mathQ = generateMath();
+                      setGameState({ ...mathQ, userAnswer: '', score: newScore, round: newRound });
+                    }
+                  } else {
+                    toast({ title: 'Неправильно!', description: 'Попробуйте ещё раз', variant: 'destructive' });
+                  }
+                }}
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-500"
+              >
+                Проверить
+              </Button>
             </div>
           )}
         </div>
