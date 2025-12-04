@@ -13,6 +13,8 @@ interface User {
   id: string;
   username: string;
   balance: number;
+  balanceUSD: number;
+  balanceRUB: number;
   gamesPlayed: number;
   totalEarned: number;
   telegramId?: number;
@@ -21,7 +23,9 @@ interface User {
   referralCode?: string;
   referredBy?: string;
   referrals?: string[];
+  referralEarnings?: number;
   promoCodesUsed?: string[];
+  createdPromoCodes?: PromoCode[];
   upgrades?: {
     autoClicker: number;
     doubleReward: number;
@@ -129,6 +133,11 @@ export default function Index() {
   const [slotSpinning, setSlotSpinning] = useState(false);
   const [slotResult, setSlotResult] = useState<string[]>(['🍒', '🍒', '🍒']);
   const [currency, setCurrency] = useState<'incoin' | 'usd' | 'rub'>('incoin');
+  const [showCreatePromo, setShowCreatePromo] = useState(false);
+  const [newPromoCode, setNewPromoCode] = useState('');
+  const [newPromoBonus, setNewPromoBonus] = useState('');
+  const [gameCurrency, setGameCurrency] = useState<'incoin' | 'usd' | 'rub'>('incoin');
+  const [allPromoCodes, setAllPromoCodes] = useState<PromoCode[]>(PROMO_CODES);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -138,6 +147,15 @@ export default function Index() {
       if (!user.upgrades) {
         user.upgrades = { autoClicker: 0, doubleReward: 0, luckyCharm: 0, speedBoost: 0 };
       }
+      if (!user.balanceUSD) user.balanceUSD = 0;
+      if (!user.balanceRUB) user.balanceRUB = 0;
+      if (!user.referralCode) {
+        user.referralCode = generateReferralCode();
+      }
+      if (!user.referrals) user.referrals = [];
+      if (!user.referralEarnings) user.referralEarnings = 0;
+      if (!user.promoCodesUsed) user.promoCodesUsed = [];
+      if (!user.createdPromoCodes) user.createdPromoCodes = [];
       setCurrentUser(user);
       setShowAuth(false);
       loadGameHistory();
@@ -176,17 +194,39 @@ export default function Index() {
     let user = allUsers.find((u: User) => u.telegramId === tgUser.id);
 
     if (!user) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const refCode = urlParams.get('ref');
+      
       user = {
         id: Date.now().toString(),
         username: tgUser.username || tgUser.first_name,
         balance: 0,
+        balanceUSD: 0,
+        balanceRUB: 0,
         gamesPlayed: 0,
         totalEarned: 0,
         telegramId: tgUser.id,
         firstName: tgUser.first_name,
         photoUrl: tgUser.photo_url,
+        referralCode: generateReferralCode(),
+        referredBy: refCode || undefined,
+        referrals: [],
+        referralEarnings: 0,
+        promoCodesUsed: [],
+        createdPromoCodes: [],
         upgrades: { autoClicker: 0, doubleReward: 0, luckyCharm: 0, speedBoost: 0 },
       };
+      
+      if (refCode) {
+        const referrer = allUsers.find((u: User) => u.referralCode === refCode);
+        if (referrer) {
+          if (!referrer.referrals) referrer.referrals = [];
+          referrer.referrals.push(user.username);
+          const refIndex = allUsers.findIndex((u: User) => u.id === referrer.id);
+          allUsers[refIndex] = referrer;
+          toast({ title: '🎁 Реферал!', description: `Вы зарегистрированы по ссылке ${referrer.username}` });
+        }
+      }
       allUsers.push(user);
       localStorage.setItem('all_users', JSON.stringify(allUsers));
       toast({ title: 'Добро пожаловать!', description: `Аккаунт ${user.username} создан через Telegram` });
@@ -240,14 +280,36 @@ export default function Index() {
         return;
       }
 
+      const urlParams = new URLSearchParams(window.location.search);
+      const refCode = urlParams.get('ref');
+      
       const newUser: User = {
         id: Date.now().toString(),
         username,
         balance: 0,
+        balanceUSD: 0,
+        balanceRUB: 0,
         gamesPlayed: 0,
         totalEarned: 0,
+        referralCode: generateReferralCode(),
+        referredBy: refCode || undefined,
+        referrals: [],
+        referralEarnings: 0,
+        promoCodesUsed: [],
+        createdPromoCodes: [],
         upgrades: { autoClicker: 0, doubleReward: 0, luckyCharm: 0, speedBoost: 0 },
       };
+      
+      if (refCode) {
+        const referrer = allUsers.find((u: User) => u.referralCode === refCode);
+        if (referrer) {
+          if (!referrer.referrals) referrer.referrals = [];
+          referrer.referrals.push(newUser.username);
+          const refIndex = allUsers.findIndex((u: User) => u.id === referrer.id);
+          allUsers[refIndex] = referrer;
+          toast({ title: '🎁 Реферал!', description: `Вы зарегистрированы по ссылке ${referrer.username}` });
+        }
+      }
 
       allUsers.push(newUser);
       localStorage.setItem('all_users', JSON.stringify(allUsers));
@@ -331,6 +393,12 @@ export default function Index() {
 
     localStorage.setItem('incoin_user', JSON.stringify(updatedUser));
     setCurrentUser(updatedUser);
+    
+    // Начислить реферальный бонус если есть реферер
+    if (currentUser.referredBy) {
+      handleReferralDeposit(currentUser.username, amount);
+    }
+    
     setShowTopUp(false);
     setTopUpAmount('');
     loadLeaderboard();
@@ -429,6 +497,233 @@ export default function Index() {
     });
   };
 
+  const generateReferralCode = () => {
+    return 'REF' + Math.random().toString(36).substring(2, 10).toUpperCase();
+  };
+
+  const copyReferralLink = () => {
+    if (!currentUser?.referralCode) return;
+    const link = `${window.location.origin}?ref=${currentUser.referralCode}`;
+    navigator.clipboard.writeText(link);
+    toast({ title: '✅ Скопировано!', description: 'Реферальная ссылка скопирована' });
+  };
+
+  const applyPromoCode = () => {
+    if (!promoInput.trim() || !currentUser) return;
+    
+    const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+    
+    if (currentUser.promoCodesUsed?.includes(promoInput)) {
+      toast({ title: 'Ошибка', description: 'Промокод уже использован', variant: 'destructive' });
+      return;
+    }
+
+    let foundPromo = allPromoCodes.find(p => p.code === promoInput && !p.usedBy.includes(currentUser.id));
+    
+    if (!foundPromo) {
+      for (const user of allUsers) {
+        if (user.createdPromoCodes) {
+          const userPromo = user.createdPromoCodes.find((p: PromoCode) => p.code === promoInput && !p.usedBy.includes(currentUser.id));
+          if (userPromo) {
+            foundPromo = userPromo;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!foundPromo) {
+      toast({ title: 'Ошибка', description: 'Промокод не найден или недействителен', variant: 'destructive' });
+      return;
+    }
+
+    foundPromo.usedBy.push(currentUser.id);
+    const updatedUser = {
+      ...currentUser,
+      balance: currentUser.balance + foundPromo.bonus,
+      promoCodesUsed: [...(currentUser.promoCodesUsed || []), promoInput],
+    };
+
+    const userIndex = allUsers.findIndex((u: User) => u.id === currentUser.id);
+    if (userIndex !== -1) {
+      allUsers[userIndex] = updatedUser;
+      localStorage.setItem('all_users', JSON.stringify(allUsers));
+    }
+
+    localStorage.setItem('incoin_user', JSON.stringify(updatedUser));
+    setCurrentUser(updatedUser);
+    setPromoInput('');
+    setShowPromo(false);
+
+    toast({ title: '🎉 Промокод активирован!', description: `+${foundPromo.bonus} INCOIN на ваш счёт` });
+  };
+
+  const createPromoCode = () => {
+    if (!newPromoCode.trim() || !newPromoBonus || !currentUser) return;
+    
+    const bonus = parseFloat(newPromoBonus);
+    if (isNaN(bonus) || bonus <= 0) {
+      toast({ title: 'Ошибка', description: 'Введите корректный бонус', variant: 'destructive' });
+      return;
+    }
+
+    if (currentUser.balance < bonus) {
+      toast({ title: 'Ошибка', description: 'Недостаточно средств для создания промокода', variant: 'destructive' });
+      return;
+    }
+
+    const newPromo: PromoCode = {
+      code: newPromoCode.toUpperCase(),
+      type: 'bonus',
+      bonus: bonus,
+      usedBy: [],
+    };
+
+    const updatedUser = {
+      ...currentUser,
+      balance: currentUser.balance - bonus,
+      createdPromoCodes: [...(currentUser.createdPromoCodes || []), newPromo],
+    };
+
+    const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+    const userIndex = allUsers.findIndex((u: User) => u.id === currentUser.id);
+    if (userIndex !== -1) {
+      allUsers[userIndex] = updatedUser;
+      localStorage.setItem('all_users', JSON.stringify(allUsers));
+    }
+
+    localStorage.setItem('incoin_user', JSON.stringify(updatedUser));
+    setCurrentUser(updatedUser);
+    setNewPromoCode('');
+    setNewPromoBonus('');
+    setShowCreatePromo(false);
+
+    toast({ title: '✅ Промокод создан!', description: `Код: ${newPromo.code}` });
+  };
+
+  const handleReferralDeposit = (referralUsername: string, depositAmount: number) => {
+    if (!currentUser) return;
+    
+    const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+    const referrerIndex = allUsers.findIndex((u: User) => u.referrals?.includes(referralUsername));
+    
+    if (referrerIndex !== -1) {
+      const bonus = depositAmount * 0.15;
+      allUsers[referrerIndex].balance += bonus;
+      allUsers[referrerIndex].referralEarnings = (allUsers[referrerIndex].referralEarnings || 0) + bonus;
+      localStorage.setItem('all_users', JSON.stringify(allUsers));
+      
+      if (allUsers[referrerIndex].id === currentUser.id) {
+        const updated = { ...currentUser, balance: currentUser.balance + bonus, referralEarnings: (currentUser.referralEarnings || 0) + bonus };
+        localStorage.setItem('incoin_user', JSON.stringify(updated));
+        setCurrentUser(updated);
+        toast({ title: '💰 Реферальный бонус!', description: `+${bonus.toFixed(2)} INCOIN (15% от депозита реферала)` });
+      }
+    }
+  };
+
+  const playSlots = () => {
+    if (!currentUser || slotSpinning) return;
+    
+    const bet = parseFloat(slotBet);
+    if (isNaN(bet) || bet <= 0) {
+      toast({ title: 'Ошибка', description: 'Введите корректную ставку', variant: 'destructive' });
+      return;
+    }
+
+    const betAmount = bet;
+    let balanceField: 'balance' | 'balanceUSD' | 'balanceRUB' = 'balance';
+    
+    if (gameCurrency === 'usd') {
+      balanceField = 'balanceUSD';
+    } else if (gameCurrency === 'rub') {
+      balanceField = 'balanceRUB';
+    }
+
+    if (currentUser[balanceField] < betAmount) {
+      toast({ title: 'Недостаточно средств', description: 'Пополните баланс', variant: 'destructive' });
+      return;
+    }
+
+    setSlotSpinning(true);
+    
+    const symbols = ['🍒', '🍋', '🍊', '💎', '7️⃣', '⭐'];
+    let spins = 0;
+    const maxSpins = 20;
+    
+    const spinInterval = setInterval(() => {
+      setSlotResult([
+        symbols[Math.floor(Math.random() * symbols.length)],
+        symbols[Math.floor(Math.random() * symbols.length)],
+        symbols[Math.floor(Math.random() * symbols.length)],
+      ]);
+      spins++;
+      
+      if (spins >= maxSpins) {
+        clearInterval(spinInterval);
+        
+        const random = Math.random();
+        let finalResult: string[];
+        let isWin = false;
+        let multiplier = 0;
+        
+        if (random < 0.05) {
+          const winSymbol = symbols[Math.floor(Math.random() * symbols.length)];
+          finalResult = [winSymbol, winSymbol, winSymbol];
+          isWin = true;
+          multiplier = winSymbol === '7️⃣' ? 10 : winSymbol === '💎' ? 5 : 2;
+        } else if (random < 0.15) {
+          finalResult = [symbols[0], symbols[1], symbols[2]];
+          multiplier = -0.1;
+        } else {
+          finalResult = [symbols[0], symbols[1], symbols[2]];
+          multiplier = -1;
+        }
+        
+        setSlotResult(finalResult);
+        
+        const resultAmount = isWin ? betAmount * multiplier : betAmount * multiplier;
+        const newBalance = currentUser[balanceField] + resultAmount;
+        
+        const updatedUser = { ...currentUser, [balanceField]: newBalance };
+        
+        const allUsers = JSON.parse(localStorage.getItem('all_users') || '[]');
+        const userIndex = allUsers.findIndex((u: User) => u.id === currentUser.id);
+        if (userIndex !== -1) {
+          allUsers[userIndex] = updatedUser;
+          localStorage.setItem('all_users', JSON.stringify(allUsers));
+        }
+        
+        localStorage.setItem('incoin_user', JSON.stringify(updatedUser));
+        setCurrentUser(updatedUser);
+        
+        const history: SlotHistory = { type: isWin ? 'win' : 'loss', bet: betAmount, result: resultAmount, timestamp: Date.now() };
+        setSlotHistory([...slotHistory, history]);
+        
+        setSlotSpinning(false);
+        
+        if (isWin) {
+          toast({ title: '🎉 ВЫИГРЫШ!', description: `+${resultAmount.toFixed(2)} ${gameCurrency.toUpperCase()}` });
+        } else {
+          toast({ title: '😢 Проигрыш', description: `${resultAmount.toFixed(2)} ${gameCurrency.toUpperCase()}`, variant: 'destructive' });
+        }
+      }
+    }, 100);
+  };
+
+  const getBalance = () => {
+    if (!currentUser) return 0;
+    if (currency === 'usd') return currentUser.balanceUSD || 0;
+    if (currency === 'rub') return currentUser.balanceRUB || 0;
+    return currentUser.balance || 0;
+  };
+
+  const getCurrencySymbol = () => {
+    if (currency === 'usd') return '$';
+    if (currency === 'rub') return '₽';
+    return 'INCOIN';
+  };
+
   const logout = () => {
     localStorage.removeItem('incoin_user');
     setCurrentUser(null);
@@ -506,10 +801,39 @@ export default function Index() {
             </div>
 
             <div className="flex items-center gap-4">
-              <Card className="px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 border-0">
+              <div className="flex gap-2">
+                <Button
+                  variant={currency === 'incoin' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setCurrency('incoin')}
+                  className={currency === 'incoin' ? 'bg-purple-600' : ''}
+                >
+                  INCOIN
+                </Button>
+                <Button
+                  variant={currency === 'usd' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setCurrency('usd')}
+                  className={currency === 'usd' ? 'bg-green-600' : ''}
+                >
+                  USD
+                </Button>
+                <Button
+                  variant={currency === 'rub' ? 'default' : 'ghost'}
+                  size="sm"
+                  onClick={() => setCurrency('rub')}
+                  className={currency === 'rub' ? 'bg-blue-600' : ''}
+                >
+                  RUB
+                </Button>
+              </div>
+              
+              <Card className={`px-4 py-2 border-0 shine ${getBalance() < 0 ? 'bg-gradient-to-r from-red-600 to-orange-600' : 'bg-gradient-to-r from-purple-600 to-pink-600'}`}>
                 <div className="flex items-center gap-2">
                   <Icon name="Coins" size={20} className="text-white coin-bounce" />
-                  <span className="font-bold text-white text-lg">{currentUser?.balance.toFixed(2)}</span>
+                  <span className={`font-bold text-white text-lg ${getBalance() < 0 ? 'text-yellow-300' : ''}`}>
+                    {getBalance() < 0 ? '-' : ''}{Math.abs(getBalance()).toFixed(2)} {getCurrencySymbol()}
+                  </span>
                 </div>
               </Card>
 
@@ -523,7 +847,7 @@ export default function Index() {
 
       <div className="container mx-auto px-4 py-8">
         <Tabs value={currentTab} onValueChange={setCurrentTab}>
-          <TabsList className="grid w-full grid-cols-6 mb-8 bg-card/50">
+          <TabsList className="grid w-full grid-cols-7 mb-8 bg-card/50">
             <TabsTrigger value="home">
               <Icon name="Home" size={18} className="mr-1" />
               Главная
@@ -540,6 +864,10 @@ export default function Index() {
               <Icon name="TrendingUp" size={18} className="mr-1" />
               Трейдинг
             </TabsTrigger>
+            <TabsTrigger value="referral">
+              <Icon name="Users" size={18} className="mr-1" />
+              Реферал
+            </TabsTrigger>
             <TabsTrigger value="account">
               <Icon name="User" size={18} className="mr-1" />
               Аккаунт
@@ -555,19 +883,31 @@ export default function Index() {
               <div className="flex items-center justify-between text-white">
                 <div>
                   <h2 className="text-3xl font-bold mb-2">Привет, {currentUser?.username}! 👋</h2>
-                  <p className="text-white/80">Играй, зарабатывай INCOIN и становись лидером!</p>
+                  <p className="text-white/80">Играй, зарабатывай и становись лидером!</p>
                 </div>
-                <div className="text-right">
-                  <div className="text-5xl font-bold">{currentUser?.balance.toFixed(2)}</div>
-                  <div className="text-white/80">INCOIN</div>
+                <div className="text-right space-y-2">
+                  <div>
+                    <div className="text-4xl font-bold">{currentUser?.balance.toFixed(2)}</div>
+                    <div className="text-white/80 text-sm">INCOIN</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <div className="font-bold">${(currentUser?.balanceUSD || 0).toFixed(2)}</div>
+                      <div className="text-white/60 text-xs">USD</div>
+                    </div>
+                    <div>
+                      <div className="font-bold">₽{(currentUser?.balanceRUB || 0).toFixed(2)}</div>
+                      <div className="text-white/60 text-xs">RUB</div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </Card>
 
             <div className="grid md:grid-cols-3 gap-4">
-              <Card className="p-6 bg-card/80 backdrop-blur">
+              <Card className="p-6 bg-card/80 backdrop-blur slide-up hover:scale-105 transition-all">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shine">
                     <Icon name="Gamepad2" size={24} className="text-white" />
                   </div>
                   <div>
@@ -577,9 +917,9 @@ export default function Index() {
                 </div>
               </Card>
 
-              <Card className="p-6 bg-card/80 backdrop-blur">
+              <Card className="p-6 bg-card/80 backdrop-blur slide-up hover:scale-105 transition-all" style={{animationDelay: '0.1s'}}>
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-yellow-500 to-orange-500 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-yellow-500 to-orange-500 flex items-center justify-center shine">
                     <Icon name="TrendingUp" size={24} className="text-white" />
                   </div>
                   <div>
@@ -589,9 +929,9 @@ export default function Index() {
                 </div>
               </Card>
 
-              <Card className="p-6 bg-card/80 backdrop-blur">
+              <Card className="p-6 bg-card/80 backdrop-blur slide-up hover:scale-105 transition-all" style={{animationDelay: '0.2s'}}>
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-teal-500 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-500 to-teal-500 flex items-center justify-center shine">
                     <Icon name="Award" size={24} className="text-white" />
                   </div>
                   <div>
@@ -602,20 +942,54 @@ export default function Index() {
               </Card>
             </div>
 
+            <div className="grid md:grid-cols-2 gap-4">
+              <Card className="p-6 bg-gradient-to-br from-purple-600/20 to-pink-600/20 border border-purple-500/50 backdrop-blur hover:scale-105 transition-all">
+                <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
+                  🎁 <Icon name="Gift" size={24} />
+                  Есть промокод?
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">Активируй промокод и получи бонусы!</p>
+                <Button 
+                  onClick={() => {
+                    setCurrentTab('referral');
+                    setShowPromo(true);
+                  }}
+                  className="w-full bg-gradient-to-r from-purple-500 to-pink-500"
+                >
+                  Активировать промокод
+                </Button>
+              </Card>
+              
+              <Card className="p-6 bg-gradient-to-br from-green-600/20 to-teal-600/20 border border-green-500/50 backdrop-blur hover:scale-105 transition-all">
+                <h3 className="text-xl font-bold mb-2 flex items-center gap-2">
+                  💰 <Icon name="Users" size={24} />
+                  Пригласи друга
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">Получай 15% от пополнений рефералов!</p>
+                <Button 
+                  onClick={() => setCurrentTab('referral')}
+                  className="w-full bg-gradient-to-r from-green-500 to-teal-500"
+                >
+                  Реферальная программа
+                </Button>
+              </Card>
+            </div>
+
             <Card className="p-6 bg-card/80 backdrop-blur">
               <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
                 <Icon name="Sparkles" size={24} />
-                Быстрый старт
+                ⚡ Быстрый старт
               </h3>
               <div className="grid md:grid-cols-2 gap-4">
-                {GAMES.slice(0, 4).map((game) => (
+                {GAMES.slice(0, 4).map((game, i) => (
                   <Button
                     key={game.id}
-                    className={`h-auto p-4 bg-gradient-to-r ${game.color} hover:opacity-90 transition-all hover:scale-105`}
+                    className={`h-auto p-4 bg-gradient-to-r ${game.color} hover:opacity-90 transition-all hover:scale-105 shine`}
                     onClick={() => {
                       setSelectedGame(game.id);
                       setCurrentTab('games');
                     }}
+                    style={{animationDelay: `${i * 0.1}s`}}
                   >
                     <Icon name={game.icon as any} size={24} className="mr-2" />
                     <span className="font-semibold">{game.name}</span>
@@ -625,9 +999,116 @@ export default function Index() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="games">
+          <TabsContent value="games" className="space-y-6">
+            <Card className="p-6 bg-gradient-to-br from-red-600 to-yellow-600 border-0 text-white pulse-glow">
+              <h2 className="text-3xl font-bold mb-4 flex items-center gap-3">
+                🎰 <Icon name="Cherry" size={36} />
+                Слоты 777 - КАЗИНО
+              </h2>
+              <p className="text-white/80 mb-4 text-lg">
+                🔥 Испытай удачу! 💎 Выигрыш 5% | 😱 Проигрыш 10% | 🎉 Джекпот x10 | ⚡ Минусовой баланс разрешён!
+              </p>
+              
+              <div className="grid md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="flex gap-2 justify-center p-6 bg-black/30 rounded-lg pulse-glow">
+                    {slotResult.map((symbol, i) => (
+                      <div 
+                        key={i} 
+                        className={`text-6xl ${slotSpinning ? 'animate-spin' : 'jackpot-spin'}`}
+                        style={{animationDelay: `${i * 0.1}s`}}
+                      >
+                        {symbol}
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Валюта игры</label>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={gameCurrency === 'incoin' ? 'default' : 'outline'}
+                        onClick={() => setGameCurrency('incoin')}
+                        className="flex-1"
+                      >
+                        INCOIN
+                      </Button>
+                      <Button
+                        variant={gameCurrency === 'usd' ? 'default' : 'outline'}
+                        onClick={() => setGameCurrency('usd')}
+                        className="flex-1"
+                      >
+                        USD
+                      </Button>
+                      <Button
+                        variant={gameCurrency === 'rub' ? 'default' : 'outline'}
+                        onClick={() => setGameCurrency('rub')}
+                        className="flex-1"
+                      >
+                        RUB
+                      </Button>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">Ставка</label>
+                    <Input
+                      type="number"
+                      value={slotBet}
+                      onChange={(e) => setSlotBet(e.target.value)}
+                      className="text-lg bg-white/10 border-white/30 text-white"
+                      min={1}
+                      disabled={slotSpinning}
+                    />
+                  </div>
+                  
+                  <Button 
+                    onClick={playSlots}
+                    disabled={slotSpinning}
+                    className="w-full bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-black font-bold text-xl py-6 shine pulse-glow"
+                  >
+                    {slotSpinning ? (
+                      <>
+                        <Icon name="Loader2" size={24} className="mr-2 animate-spin" />
+                        🎰 Крутим...
+                      </>
+                    ) : (
+                      <>
+                        🎲 <Icon name="Play" size={24} className="mr-2" />
+                        КРУТИТЬ СЛОТЫ! 💰
+                      </>
+                    )}
+                  </Button>
+                </div>
+                
+                <div className="space-y-3">
+                  <h4 className="font-bold text-lg">📊 История твоих ставок</h4>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {slotHistory.length === 0 ? (
+                      <p className="text-white/60 text-sm">🎲 Сделай первую ставку!</p>
+                    ) : (
+                      slotHistory.slice().reverse().map((h, i) => (
+                        <div key={i} className={`p-3 rounded-lg slide-up ${h.type === 'win' ? 'bg-green-500/30 border border-green-400' : 'bg-red-500/30 border border-red-400'}`}>
+                          <div className="flex justify-between items-center">
+                            <span className="font-semibold text-lg">
+                              {h.type === 'win' ? '🎉💰 ВЫИГРЫШ!' : '😱💸 Проигрыш'}
+                            </span>
+                            <span className={`font-bold text-xl ${h.type === 'win' ? 'text-green-300' : 'text-red-300'}`}>
+                              {h.type === 'win' ? '+' : ''}{h.result.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="text-xs text-white/80 mt-1 font-semibold">💵 Ставка: {h.bet}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
+            <h3 className="text-2xl font-bold">Другие игры</h3>
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {GAMES.map((game) => (
+              {GAMES.filter(g => g.id !== 'slots').map((game) => (
                 <Card
                   key={game.id}
                   className="p-6 bg-card/80 backdrop-blur hover:scale-105 transition-all cursor-pointer border-2 border-transparent hover:border-primary"
@@ -946,6 +1427,129 @@ export default function Index() {
               </div>
             </Card>
           </TabsContent>
+
+          <TabsContent value="referral" className="space-y-6">
+            <Card className="p-6 bg-gradient-to-br from-green-600 to-teal-600 border-0 text-white shine">
+              <h2 className="text-2xl font-bold mb-2 flex items-center gap-2">
+                <Icon name="Users" size={28} />
+                💰 Реферальная программа
+              </h2>
+              <p className="text-white/80 text-lg">🎁 Приглашай друзей и получай 15% от каждого их пополнения! Бесконечный доход!</p>
+            </Card>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              <Card className="p-6 bg-card/80 backdrop-blur">
+                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <Icon name="Link" size={24} />
+                  Твоя реферальная ссылка
+                </h3>
+                <div className="space-y-4">
+                  <div className="p-4 bg-muted rounded-lg break-all text-sm">
+                    {window.location.origin}?ref={currentUser?.referralCode}
+                  </div>
+                  <Button 
+                    onClick={copyReferralLink} 
+                    className="w-full bg-gradient-to-r from-green-500 to-teal-500"
+                  >
+                    <Icon name="Copy" size={20} className="mr-2" />
+                    Скопировать ссылку
+                  </Button>
+                  <div className="grid grid-cols-2 gap-4 text-center">
+                    <div className="p-4 bg-muted/50 rounded-lg">
+                      <div className="text-3xl font-bold text-green-500">{currentUser?.referrals?.length || 0}</div>
+                      <div className="text-sm text-muted-foreground">Рефералов</div>
+                    </div>
+                    <div className="p-4 bg-muted/50 rounded-lg">
+                      <div className="text-3xl font-bold text-yellow-500">{(currentUser?.referralEarnings || 0).toFixed(2)}</div>
+                      <div className="text-sm text-muted-foreground">Заработано</div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="p-6 bg-card/80 backdrop-blur">
+                <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <Icon name="Gift" size={24} />
+                  🎟️ Промокоды
+                </h3>
+                
+                <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg">
+                  <p className="text-sm font-semibold text-red-300 mb-2">🎥 YouTube промокоды:</p>
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <div>• YOUTUBE2024 - 1000 INCOIN</div>
+                    <div>• CRYPTO100 - 500 INCOIN</div>
+                    <div>• INCOIN777 - 777 INCOIN</div>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  <Button 
+                    onClick={() => setShowPromo(true)} 
+                    className="w-full bg-gradient-to-r from-purple-500 to-pink-500"
+                  >
+                    <Icon name="Tag" size={20} className="mr-2" />
+                    Активировать промокод
+                  </Button>
+                  <Button 
+                    onClick={() => setShowCreatePromo(true)} 
+                    variant="outline"
+                    className="w-full"
+                  >
+                    <Icon name="Plus" size={20} className="mr-2" />
+                    Создать промокод
+                  </Button>
+                  
+                  {currentUser?.promoCodesUsed && currentUser.promoCodesUsed.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-sm text-muted-foreground mb-2">Использованные промокоды:</p>
+                      <div className="space-y-2">
+                        {currentUser.promoCodesUsed.map((code, i) => (
+                          <div key={i} className="p-2 bg-muted/50 rounded text-sm font-mono">
+                            {code}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {currentUser?.createdPromoCodes && currentUser.createdPromoCodes.length > 0 && (
+                    <div className="mt-4">
+                      <p className="text-sm text-muted-foreground mb-2">Созданные промокоды:</p>
+                      <div className="space-y-2">
+                        {currentUser.createdPromoCodes.map((promo, i) => (
+                          <div key={i} className="p-3 bg-muted/50 rounded">
+                            <div className="font-mono font-bold">{promo.code}</div>
+                            <div className="text-xs text-muted-foreground">
+                              Бонус: {promo.bonus} INCOIN · Использован: {promo.usedBy.length} раз
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </div>
+
+            {currentUser?.referrals && currentUser.referrals.length > 0 && (
+              <Card className="p-6 bg-card/80 backdrop-blur">
+                <h3 className="text-xl font-bold mb-4">Твои рефералы</h3>
+                <div className="space-y-2">
+                  {currentUser.referrals.map((ref, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-muted/50 rounded">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                          <Icon name="User" size={20} className="text-white" />
+                        </div>
+                        <span className="font-semibold">{ref}</span>
+                      </div>
+                      <Badge variant="secondary">15% бонус</Badge>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -960,6 +1564,83 @@ export default function Index() {
           });
         }}
       />
+
+      <Dialog open={showPromo} onOpenChange={setShowPromo}>
+        <DialogContent className="bg-card/95 backdrop-blur">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-2">
+              <Icon name="Tag" size={28} />
+              Активировать промокод
+            </DialogTitle>
+            <DialogDescription>
+              Введите промокод для получения бонуса
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Input
+              placeholder="Введите промокод"
+              value={promoInput}
+              onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && applyPromoCode()}
+              className="text-lg font-mono"
+            />
+            <Button 
+              onClick={applyPromoCode} 
+              className="w-full bg-gradient-to-r from-purple-500 to-pink-500"
+            >
+              <Icon name="CheckCircle" size={20} className="mr-2" />
+              Активировать
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCreatePromo} onOpenChange={setShowCreatePromo}>
+        <DialogContent className="bg-card/95 backdrop-blur">
+          <DialogHeader>
+            <DialogTitle className="text-2xl flex items-center gap-2">
+              <Icon name="Plus" size={28} />
+              Создать промокод
+            </DialogTitle>
+            <DialogDescription>
+              Создайте свой промокод. Сумма бонуса спишется с вашего баланса.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div>
+              <label className="text-sm font-medium mb-2 block">Код промокода</label>
+              <Input
+                placeholder="MYPROMO123"
+                value={newPromoCode}
+                onChange={(e) => setNewPromoCode(e.target.value.toUpperCase())}
+                className="text-lg font-mono"
+                maxLength={20}
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-2 block">Сумма бонуса</label>
+              <Input
+                type="number"
+                placeholder="100"
+                value={newPromoBonus}
+                onChange={(e) => setNewPromoBonus(e.target.value)}
+                className="text-lg"
+                min={1}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Эта сумма будет списана с вашего баланса
+              </p>
+            </div>
+            <Button 
+              onClick={createPromoCode} 
+              className="w-full bg-gradient-to-r from-green-500 to-teal-500"
+            >
+              <Icon name="Sparkles" size={20} className="mr-2" />
+              Создать промокод
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showTopUp} onOpenChange={setShowTopUp}>
         <DialogContent className="bg-card/95 backdrop-blur">

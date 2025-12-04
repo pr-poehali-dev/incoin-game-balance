@@ -51,16 +51,22 @@
 
 @layer utilities {
   .coin-bounce {
-    animation: coinBounce 0.5s ease-in-out;
+    animation: coinBounce 0.5s ease-in-out infinite;
   }
 
   @keyframes coinBounce {
     0%,
     100% {
-      transform: scale(1) translateY(0);
+      transform: scale(1) translateY(0) rotate(0deg);
+    }
+    25% {
+      transform: scale(1.1) translateY(-5px) rotate(5deg);
     }
     50% {
-      transform: scale(1.2) translateY(-10px);
+      transform: scale(1.2) translateY(-10px) rotate(-5deg);
+    }
+    75% {
+      transform: scale(1.1) translateY(-5px) rotate(5deg);
     }
   }
 
@@ -79,15 +85,80 @@
     background: linear-gradient(
       90deg,
       transparent,
-      rgba(255, 255, 255, 0.3),
+      rgba(255, 255, 255, 0.4),
       transparent
     );
-    animation: shine 3s infinite;
+    animation: shine 2s infinite;
   }
 
   @keyframes shine {
     100% {
       left: 100%;
+    }
+  }
+
+  .pulse-glow {
+    animation: pulseGlow 2s ease-in-out infinite;
+  }
+
+  @keyframes pulseGlow {
+    0%,
+    100% {
+      box-shadow: 0 0 20px rgba(168, 85, 247, 0.4);
+    }
+    50% {
+      box-shadow: 0 0 40px rgba(236, 72, 153, 0.6);
+    }
+  }
+
+  .slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .jackpot-spin {
+    animation: jackpotSpin 1s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+  }
+
+  @keyframes jackpotSpin {
+    0% {
+      transform: scale(0.5) rotate(-180deg);
+      opacity: 0;
+    }
+    100% {
+      transform: scale(1) rotate(0deg);
+      opacity: 1;
+    }
+  }
+
+  .money-rain {
+    animation: moneyRain 3s ease-in-out infinite;
+  }
+
+  @keyframes moneyRain {
+    0% {
+      transform: translateY(-100px) rotate(0deg);
+      opacity: 0;
+    }
+    10% {
+      opacity: 1;
+    }
+    90% {
+      opacity: 1;
+    }
+    100% {
+      transform: translateY(100vh) rotate(360deg);
+      opacity: 0;
     }
   }
 }
